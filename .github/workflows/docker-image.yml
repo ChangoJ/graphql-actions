@@ -1,59 +1,53 @@
-name: Docker Image CI
+name: Docker Image CI  # Workflow para build y push de imagen Docker con versionado semántico.
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main" ]  # Trigger en pushes a main (para releases).
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main" ]  # Trigger en PRs a main (solo build, sin push).
 
 jobs:
-
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # Entorno de ejecución: Ubuntu más reciente para compatibilidad.
 
     steps:
-    - name: Checkout code
+    - name: Checkout code  # Clona el repositorio con historia completa para versionado.
       uses: actions/checkout@v4
-      with: 
-        fetch-depth: 0
-        
-    - name: Git Semantic Version
+      with:
+        fetch-depth: 0  # Necesario para analizar commits históricos en semantic-version.
+
+    - name: Git Semantic Version  # Extrae versión semántica de commits (major/feat).
       uses: PaulHatch/semantic-version@v5.4.0
+      id: version
       with:
         major_pattern: "major:"
         minor_pattern: "feat:"
-        version_format: "${major}.${minor}.${patch}-prerelease${increment}"
-      id: version
-      
-    - name: Docker login
-      env:
-        DOCKER_USER: ${{ secrets.DOCKER_USER }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        
-      run: |
-        docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
-      
-    - name: Build Docker Image
-      env:       
-        NEW_VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        docker build -t mrchango/docker-graphql:$NEW_VERSION .
-        docker build -t mrchango/docker-graphql:latest .
-        
-    - name: Push Docker Image
-      env:       
-        NEW_VERSION: ${{ steps.version.outputs.version }}
-      run: |
-        docker push mrchango/docker-graphql:$NEW_VERSION
-        docker push mrchango/docker-graphql:latest
-        
-      
-      
+        # Formato: major.minor.patch-prereleaseN para PRs; quita -prerelease en main.
+        version_format: "${major}.${minor}.${patch}${release?'-prerelease':''}${increment}"
 
+    - name: Docker login  # Autentica en Docker Hub de forma segura (sin exponer creds en logs).
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USER }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
 
+    - name: Build and Push Docker Image  # Construye y sube imagen con cacheo; usa tags versión y latest.
+      if: github.event_name == 'push'  # Solo push en branches (no en PRs).
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true  # Habilita push al registry.
+        tags: |
+          mrchango/docker-graphql:${{ steps.version.outputs.version }}
+          mrchango/docker-graphql:latest
+        cache-from: type=gha  # Cachea layers desde GitHub Actions para builds rápidos.
+        cache-to: type=gha,mode=max  # Guarda cache en GitHub para reutilización.
 
+    - name: Build Docker Image (PR only)  # Solo build en PRs (sin push ni tags, para testing).
+      if: github.event_name == 'pull_request'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false  # No sube a registry.
+        tags: mrchango/docker-graphql:test  # Tag temporal para validación.
 
-    
-    # - name: Build the Docker image
-    #   run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
