@@ -1,53 +1,55 @@
-name: Docker Image CI  # Workflow para build y push de imagen Docker con versionado semántico.
+name: Docker Image CI
 
 on:
   push:
-    branches: [ "main" ]  # Trigger en pushes a main (para releases).
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]  # Trigger en PRs a main (solo build, sin push).
+    branches: [ "main" ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Entorno de ejecución: Ubuntu más reciente para compatibilidad.
-
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout code  # Clona el repositorio con historia completa para versionado.
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Necesario para analizar commits históricos en semantic-version.
+        fetch-depth: 0
 
-    - name: Git Semantic Version  # Extrae versión semántica de commits (major/feat).
+    - name: Git Semantic Version
       uses: PaulHatch/semantic-version@v5.4.0
       id: version
       with:
         major_pattern: "major:"
         minor_pattern: "feat:"
-        # Formato: major.minor.patch-prereleaseN para PRs; quita -prerelease en main.
-        version_format: "${major}.${minor}.${patch}${release?'-prerelease':''}${increment}"
+        version_format: "${major}.${minor}.${patch}${increment}"
 
-    - name: Docker login  # Autentica en Docker Hub de forma segura (sin exponer creds en logs).
+    # 🔧 CRÍTICO: Configurar Buildx con driver docker-container
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Docker login
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USER }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Build and Push Docker Image  # Construye y sube imagen con cacheo; usa tags versión y latest.
-      if: github.event_name == 'push'  # Solo push en branches (no en PRs).
+    - name: Build and Push Docker Image
+      if: github.event_name == 'push'
       uses: docker/build-push-action@v5
       with:
         context: .
-        push: true  # Habilita push al registry.
+        push: true
         tags: |
           mrchango/docker-graphql:${{ steps.version.outputs.version }}
           mrchango/docker-graphql:latest
-        cache-from: type=gha  # Cachea layers desde GitHub Actions para builds rápidos.
-        cache-to: type=gha,mode=max  # Guarda cache en GitHub para reutilización.
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-    - name: Build Docker Image (PR only)  # Solo build en PRs (sin push ni tags, para testing).
+    - name: Build Docker Image (PR only)
       if: github.event_name == 'pull_request'
       uses: docker/build-push-action@v5
       with:
         context: .
-        push: false  # No sube a registry.
-        tags: mrchango/docker-graphql:test  # Tag temporal para validación.
-
+        push: false
+        tags: mrchango/docker-graphql:test
+        cache-from: type=gha
