@@ -28,7 +28,7 @@ jobs:
         docker build -t mrchango/docker-graphql:0.0.1 .
     - name: Push Docker Image
       run: |
-        docker push mrchango/docker-graphql:0.0.1 .
+        docker push mrchango/docker-graphql:0.0.1
       
       
 
